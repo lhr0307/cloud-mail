@@ -2,6 +2,18 @@ import app from '../hono/hono';
 import { dbInit } from '../init/init';
 import settingService from '../service/setting-service';
 
+app.get('/init/refresh-setting-once', async (c) => {
+	const setting = await c.env.kv.get('setting:');
+
+	if (setting) {
+		return c.text('already initialized');
+	}
+
+	await settingService.refresh(c);
+
+	return c.text('success');
+});
+
 app.get('/init/bootstrap-once', async (c) => {
 	const setting = await c.env.kv.get('setting:');
 
