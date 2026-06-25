@@ -26,6 +26,7 @@ jobs:
       KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID || vars.KV_NAMESPACE_ID }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || vars.R2_BUCKET_NAME }}
       PROJECT_LINK: ${{ secrets.PROJECT_LINK || vars.PROJECT_LINK }}
+      INIT_URL: ${{ secrets.INIT_URL || vars.INIT_URL }}
       AI_MODEL: ${{ secrets.AI_MODEL || vars.AI_MODEL || '@cf/meta/llama-3.1-8b-instruct' }}
       CLOUDFLARE_EMAIL: ${{ secrets.CF_EMAIL || vars.CF_EMAIL || false }}
       ANALYSIS_CACHE: ${{ secrets.ANALYSIS_CACHE || vars.ANALYSIS_CACHE || false }}
@@ -255,16 +256,41 @@ jobs:
         run: |
           echo "🛠️ Starting database initialization..."
           sleep 15
-          
-          WORKER_URL="${CUSTOM_DOMAIN:+https://$CUSTOM_DOMAIN}"
-          WORKER_URL="${WORKER_URL:-${{ steps.deploy.outputs.worker_url }}}"
-          
-          if [ -z "$WORKER_URL" ]; then
-            echo "❌ Preview URL not available. Please set CUSTOM_DOMAIN."
-            exit 1
+
+          [ -n "$JWT_SECRET" ] && echo "::add-mask::$JWT_SECRET"
+
+          INIT_ENDPOINT="$INIT_URL"
+          if [ -n "$INIT_ENDPOINT" ] && [[ "$INIT_ENDPOINT" != */api/init/* ]]; then
+            INIT_ENDPOINT="${INIT_ENDPOINT%/}/api/init/${JWT_SECRET}"
           fi
-          
-          HTTP_CODE=$(curl -sL -w "%{http_code}" -o response.txt "$WORKER_URL/api/init/${JWT_SECRET}")
+
+          if [ -z "$INIT_ENDPOINT" ]; then
+            WORKER_URL="$CUSTOM_DOMAIN"
+            if [ -n "$WORKER_URL" ] && [[ "$WORKER_URL" != http://* && "$WORKER_URL" != https://* ]]; then
+              WORKER_URL="https://$WORKER_URL"
+            fi
+            WORKER_URL="${WORKER_URL:-${{ steps.deploy.outputs.worker_url }}}"
+
+            if [ -z "$WORKER_URL" ]; then
+              echo "::warning::Database initialization skipped because INIT_URL is not set and no Worker URL is available."
+              exit 0
+            fi
+
+            INIT_ENDPOINT="$WORKER_URL/api/init/${JWT_SECRET}"
+          fi
+
+          echo "::add-mask::$INIT_ENDPOINT"
+
+          set +e
+          HTTP_CODE=$(curl --connect-timeout 20 --max-time 60 -sL -w "%{http_code}" -o response.txt "$INIT_ENDPOINT")
+          CURL_STATUS=$?
+          set -e
+
+          if [ $CURL_STATUS -ne 0 ]; then
+            echo "::warning::Database initialization endpoint is not reachable yet (curl exit $CURL_STATUS). Deployment succeeded; initialize manually or set INIT_URL when the domain is reachable."
+            exit 0
+          fi
+
           RESPONSE_BODY=$(cat response.txt)
 
           if [ "$RESPONSE_BODY" = "success" ]; then
