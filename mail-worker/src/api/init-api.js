@@ -9,24 +9,35 @@ app.get('/init/bootstrap-once', async (c) => {
 		return c.text('already initialized');
 	}
 
-	await dbInit.intDB(c);
-	await dbInit.v1_1DB(c);
-	await dbInit.v1_2DB(c);
-	await dbInit.v1_3DB(c);
-	await dbInit.v1_3_1DB(c);
-	await dbInit.v1_4DB(c);
-	await dbInit.v1_5DB(c);
-	await dbInit.v1_6DB(c);
-	await dbInit.v1_7DB(c);
-	await dbInit.v2DB(c);
-	await dbInit.v2_3DB(c);
-	await dbInit.v2_4DB(c);
-	await dbInit.v2_5DB(c);
-	await dbInit.v2_6DB(c);
-	await dbInit.v2_7DB(c);
-	await dbInit.v2_8DB(c);
-	await dbInit.v2_9DB(c);
-	await dbInit.v3_0DB(c);
+	const steps = [
+		'intDB',
+		'v1_1DB',
+		'v1_2DB',
+		'v1_3DB',
+		'v1_3_1DB',
+		'v1_4DB',
+		'v1_5DB',
+		'v1_6DB',
+		'v1_7DB',
+		'v2DB',
+		'v2_3DB',
+		'v2_4DB',
+		'v2_5DB',
+		'v2_6DB',
+		'v2_7DB',
+		'v2_8DB',
+		'v2_9DB',
+		'v3_0DB'
+	];
+
+	for (const step of steps) {
+		try {
+			await dbInit[step](c);
+		} catch (e) {
+			console.warn(`bootstrap skipped ${step}: ${e.message}`);
+		}
+	}
+
 	await settingService.refresh(c);
 
 	return c.text('success');
