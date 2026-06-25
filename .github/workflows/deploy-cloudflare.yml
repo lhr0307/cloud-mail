@@ -6,6 +6,7 @@ on:
     paths:
       - "mail-worker/**"
       - "mail-vue/**"
+      - ".github/workflows/deploy-cloudflare.yml"
   workflow_dispatch:
 
 jobs:
@@ -28,6 +29,7 @@ jobs:
       AI_MODEL: ${{ secrets.AI_MODEL || vars.AI_MODEL || '@cf/meta/llama-3.1-8b-instruct' }}
       CLOUDFLARE_EMAIL: ${{ secrets.CF_EMAIL || vars.CF_EMAIL || false }}
       ANALYSIS_CACHE: ${{ secrets.ANALYSIS_CACHE || vars.ANALYSIS_CACHE || false }}
+      ENABLE_CRON: ${{ secrets.ENABLE_CRON || vars.ENABLE_CRON || false }}
       LINUXDO_CLIENT_ID: ${{ secrets.LINUXDO_CLIENT_ID || vars.LINUXDO_CLIENT_ID }}
       LINUXDO_CLIENT_SECRET: ${{ secrets.LINUXDO_CLIENT_SECRET || vars.LINUXDO_CLIENT_SECRET }}
       LINUXDO_CALLBACK_URL: ${{ secrets.LINUXDO_CALLBACK_URL || vars.LINUXDO_CALLBACK_URL }}
@@ -113,6 +115,11 @@ jobs:
           
           if [ -z "$CUSTOM_DOMAIN" ]; then
             sed -i '/\[\[routes\]\]/,/^$/d' "$CONFIG_FILE"
+          fi
+
+          if [ "$(printf '%s' "$ENABLE_CRON" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
+            sed -i '/^\[triggers\]/,/^$/d' "$CONFIG_FILE"
+            echo "::notice::Cron triggers are disabled for this deployment. Set ENABLE_CRON=true after creating a workers.dev subdomain in Cloudflare."
           fi
           
           if [ "$(printf '%s' "$CLOUDFLARE_EMAIL" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
@@ -220,10 +227,14 @@ jobs:
         working-directory: ./mail-worker
         run: |
           echo "🚀 Starting deployment..."
+          [ -n "$JWT_SECRET" ] && echo "::add-mask::$JWT_SECRET"
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && echo "::add-mask::$CLOUDFLARE_ACCOUNT_ID"
           pnpm wrangler deploy -c wrangler-action.toml 2>&1 \
             | tee deploy.log \
             | grep -v "https://.*\.workers\.dev" \
             | sed -E 's/env\.domain .*/env.domain (***)/' \
+            | sed -E 's/env\.jwt_secret .*/env.jwt_secret (***)/' \
             || true
           
           DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
